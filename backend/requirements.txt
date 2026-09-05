@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+redis
+websockets
+httpx
+pydantic
+pydantic-settings
