@@ -1,0 +1,11 @@
+{
+  "python.defaultInterpreterPath": "C:\\Program Files\\Python314\\python.exe",
+  "python.analysis.extraPaths": [
+    "C:\\Users\\Aniruddha Paul\\AppData\\Roaming\\Python\\Python314\\site-packages",
+    "c:\\Users\\Aniruddha Paul\\OneDrive\\Desktop\\SIH2026\\rail-sih\\backend-ai"
+  ],
+  "python.autoComplete.extraPaths": [
+    "C:\\Users\\Aniruddha Paul\\AppData\\Roaming\\Python\\Python314\\site-packages",
+    "c:\\Users\\Aniruddha Paul\\OneDrive\\Desktop\\SIH2026\\rail-sih\\backend-ai"
+  ]
+}

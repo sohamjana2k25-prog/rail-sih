@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  AlertTriangle, CheckCircle, Clock, Info, 
+  AlertTriangle, CheckCircle, 
   Activity, ArrowUpRight, ArrowDownRight, AlertOctagon,
-  User, Download, ThumbsDown, Check, FileDown, Filter, Layers, Zap
+  ThumbsDown, Check, FileDown, Filter, Zap, Radio, Loader2, Layers
 } from 'lucide-react';
-import { KPI, Block, Alert, Train, SimulationResult, Task } from './types';
+import { KPI, Block, Alert, Train, SimulationResult, TelemetryEvent } from './types';
 import { mockKPIs, mockBlocks, mockAlerts, mockTrains, mockCorridors } from './data/mock';
 import { simulationService } from './services/simulationService';
+import { NormalizationLab } from './components/NormalizationLab';
 
 // Reusable Components
 const Card = ({ children, className = "" }: { children: React.ReactNode, className?: string }) => (
@@ -36,7 +37,7 @@ const KPICard = ({ kpi }: { kpi: KPI }) => {
   );
 };
 
-const Timeline = ({ blocks, onBlockClick }: { blocks: Block[], onBlockClick: (b: Block) => void }) => {
+const Timeline = ({ blocks, corridors, onBlockClick }: { blocks: Block[], corridors: string[], onBlockClick: (b: Block) => void }) => {
   const hours = Array.from({ length: 13 }, (_, i) => i * 2); // 00, 02, 04...24
   
   // Very basic calc for position: 00:00 is 0%, 24:00 is 100%
@@ -47,7 +48,23 @@ const Timeline = ({ blocks, onBlockClick }: { blocks: Block[], onBlockClick: (b:
 
   return (
     <Card className="mt-6 overflow-x-auto">
-      <h3 className="text-lg font-semibold mb-4 text-white">Master Corridor Timeline</h3>
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-semibold text-white">Master Corridor Timeline</h3>
+        <div className="flex items-center gap-4 text-xs text-gray-400">
+          <div className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded bg-blue-600 inline-block"></span>
+            <span>Engineering</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded bg-orange-600 inline-block"></span>
+            <span>Electrical (TRD)</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded bg-emerald-600 inline-block"></span>
+            <span>Signal & Telecom</span>
+          </div>
+        </div>
+      </div>
       <div className="min-w-[800px]">
         {/* Time Header */}
         <div className="flex ml-24 relative h-6 border-b border-gray-700 mb-4">
@@ -60,7 +77,7 @@ const Timeline = ({ blocks, onBlockClick }: { blocks: Block[], onBlockClick: (b:
         
         {/* Rows */}
         <div className="space-y-4">
-          {mockCorridors.map(corridor => {
+          {corridors.map(corridor => {
             const corridorBlocks = blocks.filter(b => b.section_id === corridor);
             return (
               <div key={corridor} className="flex items-center">
@@ -69,23 +86,33 @@ const Timeline = ({ blocks, onBlockClick }: { blocks: Block[], onBlockClick: (b:
                   {corridorBlocks.map(block => {
                     const startPos = calcPos(block.scheduled_start);
                     const endPos = calcPos(block.scheduled_end);
-                    const width = endPos - startPos;
-                    const bg = block.departments_involved.includes('Engineering') ? 'bg-blue-600' : 'bg-orange-600';
+                    const width = Math.max(endPos - startPos, 2);
+                    const bg = block.departments_involved.includes('Engineering') && block.departments_involved.includes('Signal & Telecom')
+                      ? 'bg-indigo-600'
+                      : block.departments_involved.includes('Engineering')
+                      ? 'bg-blue-600'
+                      : block.departments_involved.includes('Electrical')
+                      ? 'bg-orange-600'
+                      : 'bg-emerald-600';
+
                     return (
                       <div 
                         key={block.block_id}
                         onClick={() => onBlockClick(block)}
-                        className={`absolute top-1 bottom-1 ${bg} rounded text-xs px-2 flex items-center cursor-pointer hover:brightness-110 shadow-sm border border-black/20`}
+                        className={`absolute top-1 bottom-1 ${bg} rounded text-xs px-2 flex items-center cursor-pointer hover:brightness-110 shadow-sm border border-black/20 group transition`}
                         style={{ left: `${startPos}%`, width: `${width}%` }}
-                        title={block.block_id}
+                        title={`${block.block_id} (${block.scheduled_start} - ${block.scheduled_end})`}
                       >
-                        <span className="truncate w-full text-white font-medium">{block.block_id}</span>
+                        <span className="truncate w-full text-white font-medium flex items-center gap-1">
+                          {block.status === 'APPROVED' && <Check size={10} className="text-green-300 shrink-0" />}
+                          {block.block_id}
+                        </span>
                       </div>
                     );
                   })}
                   {/* Current Time Indicator (Mocked at 10:45) */}
                   <div className="absolute top-[-10px] bottom-[-10px] w-0.5 bg-red-500 z-10" style={{ left: `${calcPos('10:45')}%` }}>
-                    <div className="absolute -top-4 -translate-x-1/2 bg-red-500 text-white text-[10px] px-1 rounded">NOW</div>
+                    <div className="absolute -top-4 -translate-x-1/2 bg-red-500 text-white text-[10px] px-1 rounded font-mono">NOW</div>
                   </div>
                 </div>
               </div>
@@ -102,16 +129,21 @@ const AlertsPanel = ({ alerts }: { alerts: Alert[] }) => (
     <h3 className="text-lg font-semibold mb-4 text-white flex items-center gap-2">
       <AlertOctagon size={18} className="text-red-400" /> Live Alerts
     </h3>
-    <div className="space-y-3 overflow-y-auto flex-1">
+    <div className="space-y-3 overflow-y-auto flex-1 max-h-[380px]">
       {alerts.map(a => (
         <div key={a.id} className="p-3 bg-gray-900 border border-gray-700 rounded text-sm">
           <div className="flex justify-between mb-1">
-            <span className={`font-semibold ${a.type === 'WARNING' ? 'text-yellow-400' : a.type === 'TRAIN IMPACT' ? 'text-red-400' : 'text-green-400'}`}>
+            <span className={`font-semibold ${
+              a.type === 'RESOLVED' ? 'text-green-400' :
+              a.type === 'WARNING' ? 'text-yellow-400' : 
+              a.type === 'TRAIN IMPACT' ? 'text-red-400' : 
+              'text-orange-400'
+            }`}>
               {a.type}
             </span>
-            <span className="text-gray-500 text-xs">{a.timestamp}</span>
+            <span className="text-gray-500 text-xs font-mono">{a.timestamp}</span>
           </div>
-          <p className="text-gray-300">{a.message}</p>
+          <p className="text-gray-300 text-xs leading-relaxed">{a.message}</p>
         </div>
       ))}
     </div>
@@ -121,7 +153,7 @@ const AlertsPanel = ({ alerts }: { alerts: Alert[] }) => (
 const TrainsPanel = ({ trains }: { trains: Train[] }) => (
   <Card className="h-full flex flex-col">
     <h3 className="text-lg font-semibold mb-4 text-white">Active Conflicts / Trains</h3>
-    <div className="space-y-3 overflow-y-auto flex-1">
+    <div className="space-y-3 overflow-y-auto flex-1 max-h-[380px]">
       {trains.map(t => (
         <div key={t.train_no} className="p-3 bg-gray-900 border border-gray-700 rounded text-sm flex flex-col">
           <div className="flex justify-between items-center mb-2">
@@ -138,25 +170,117 @@ const TrainsPanel = ({ trains }: { trains: Train[] }) => (
   </Card>
 );
 
-const BlockModal = ({ block, onClose }: { block: Block, onClose: () => void }) => {
+const TelemetryPanel = ({ telemetry, loading }: { telemetry: TelemetryEvent[]; loading: boolean }) => (
+  <Card className="h-full flex flex-col">
+    <div className="flex justify-between items-center mb-4">
+      <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+        <Radio size={18} className="text-blue-400 animate-pulse" /> Live Operations Stream
+      </h3>
+      <span className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center gap-1">
+        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping"></span> F-06 FEED
+      </span>
+    </div>
+    {loading && telemetry.length === 0 ? (
+      <div className="flex flex-col items-center justify-center h-48 text-gray-500 space-y-3">
+        <Activity size={32} className="opacity-50 animate-spin" />
+        <p className="text-sm">Connecting to F-06 Telemetry...</p>
+      </div>
+    ) : (
+      <div className="space-y-3 overflow-y-auto flex-1 max-h-[380px]">
+        {telemetry.map(t => {
+          const badgeClass = 
+            t.badge_color === 'red' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+            t.badge_color === 'yellow' ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' :
+            t.badge_color === 'green' ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+            'bg-blue-500/20 text-blue-400 border-blue-500/30';
+
+          return (
+            <div key={t.id} className="p-3 bg-gray-900 border border-gray-700 rounded text-sm hover:border-gray-600 transition">
+              <div className="flex justify-between items-center mb-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-xs text-white">{t.section}</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono border ${badgeClass}`}>
+                    {t.status}
+                  </span>
+                </div>
+                <span className="text-gray-500 text-xs font-mono">{t.timestamp}</span>
+              </div>
+              <p className="text-gray-300 text-xs leading-relaxed">{t.detail}</p>
+            </div>
+          );
+        })}
+      </div>
+    )}
+  </Card>
+);
+
+const BlockModal = ({ 
+  block, 
+  onClose,
+  onDecisionSubmit
+}: { 
+  block: Block; 
+  onClose: () => void;
+  onDecisionSubmit: (blockId: string, decision: 'approved' | 'rejected', reason?: string) => Promise<void>;
+}) => {
   const [simulating, setSimulating] = useState(false);
   const [simResult, setSimResult] = useState<SimulationResult | null>(null);
+  const [simulationError, setSimulationError] = useState<string | null>(null);
   const [newEndTime, setNewEndTime] = useState(block.scheduled_end);
-  const [overrideReason, setOverrideReason] = useState('');
-  const [overrideStatus, setOverrideStatus] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  const [overrideReason, setOverrideReason] = useState(block.decision_reason || '');
+  const [overrideStatus, setOverrideStatus] = useState<'pending' | 'approved' | 'rejected'>(
+    block.decision ? block.decision : 'pending'
+  );
+  const [submittingDecision, setSubmittingDecision] = useState(false);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
 
   const handleSimulate = async () => {
     setSimulating(true);
-    const res = await simulationService.simulateWhatIf(block.block_id, newEndTime);
-    setSimResult(res);
-    setSimulating(false);
+    setSimulationError(null);
+    try {
+      const res = await simulationService.simulateWhatIf(block.block_id, newEndTime);
+      setSimResult(res);
+    } catch {
+      setSimulationError('Simulation service is unavailable. Try again when the API is online.');
+    } finally {
+      setSimulating(false);
+    }
+  };
+
+  const handleDecision = async (decision: 'approved' | 'rejected') => {
+    if (decision === 'rejected' && !overrideReason.trim()) {
+      alert("Please provide a reason for overriding/rejecting.");
+      return;
+    }
+    setSubmittingDecision(true);
+    setDecisionError(null);
+    try {
+      await onDecisionSubmit(block.block_id, decision, overrideReason.trim());
+      setOverrideStatus(decision);
+    } catch (err: any) {
+      setDecisionError(err.message || 'Failed to submit decision to backend.');
+    } finally {
+      setSubmittingDecision(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-gray-900 border border-gray-700 rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
         <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-800">
-          <h2 className="text-xl font-bold text-white">Block Details: {block.block_id}</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-bold text-white">Block Details: {block.block_id}</h2>
+            {block.status === 'APPROVED' && (
+              <span className="px-2 py-0.5 bg-green-500/20 text-green-400 border border-green-500/30 rounded text-xs font-semibold flex items-center gap-1">
+                <Check size={12} /> APPROVED
+              </span>
+            )}
+            {block.status === 'OVERRIDDEN' && (
+              <span className="px-2 py-0.5 bg-red-500/20 text-red-400 border border-red-500/30 rounded text-xs font-semibold flex items-center gap-1">
+                <ThumbsDown size={12} /> OVERRIDDEN
+              </span>
+            )}
+          </div>
           <button onClick={onClose} className="text-gray-400 hover:text-white px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 transition">Close</button>
         </div>
         
@@ -245,6 +369,12 @@ const BlockModal = ({ block, onClose }: { block: Block, onClose: () => void }) =
                 </div>
               </div>
 
+              {simulationError && (
+                <div role="alert" className="mb-4 rounded border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-300">
+                  {simulationError}
+                </div>
+              )}
+
               {simResult && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
                   <div className="grid grid-cols-2 gap-3 mb-4">
@@ -270,33 +400,34 @@ const BlockModal = ({ block, onClose }: { block: Block, onClose: () => void }) =
             <div className="bg-gray-800 border border-gray-700 p-4 rounded-lg">
               <h3 className="text-lg font-medium text-white mb-3 flex items-center gap-2">Human-in-the-Loop Approval</h3>
               <div className="space-y-4">
+                {decisionError && (
+                  <div className="p-2.5 rounded bg-red-900/30 border border-red-500/40 text-red-300 text-xs">
+                    {decisionError}
+                  </div>
+                )}
                 {overrideStatus === 'pending' ? (
                   <>
-                    <p className="text-sm text-gray-400">Review AI priority and schedule for approval.</p>
+                    <p className="text-sm text-gray-400">Review AI priority and schedule for controller sign-off.</p>
                     <textarea 
                       value={overrideReason}
                       onChange={(e) => setOverrideReason(e.target.value)}
-                      placeholder="Reason for override (Required for rejection)..."
+                      placeholder="Reason for decision (Mandatory for rejection/override)..."
                       className="w-full bg-gray-900 border border-gray-600 text-white rounded p-2 text-sm outline-none focus:border-indigo-500 min-h-[60px]"
                     />
                     <div className="flex gap-2">
                       <button 
-                        onClick={() => setOverrideStatus('approved')}
-                        className="flex-1 bg-green-600 hover:bg-green-500 text-white px-3 py-2 rounded text-sm font-medium transition flex items-center justify-center gap-2"
+                        onClick={() => handleDecision('approved')}
+                        disabled={submittingDecision}
+                        className="flex-1 bg-green-600 hover:bg-green-500 text-white px-3 py-2 rounded text-sm font-medium transition flex items-center justify-center gap-2 disabled:opacity-50"
                       >
-                        <Check size={16} /> Approve
+                        {submittingDecision ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} Approve
                       </button>
                       <button 
-                        onClick={() => {
-                          if (!overrideReason) {
-                            alert("Please provide a reason for overriding.");
-                            return;
-                          }
-                          setOverrideStatus('rejected');
-                        }}
-                        className="flex-1 bg-red-600 hover:bg-red-500 text-white px-3 py-2 rounded text-sm font-medium transition flex items-center justify-center gap-2"
+                        onClick={() => handleDecision('rejected')}
+                        disabled={submittingDecision}
+                        className="flex-1 bg-red-600 hover:bg-red-500 text-white px-3 py-2 rounded text-sm font-medium transition flex items-center justify-center gap-2 disabled:opacity-50"
                       >
-                        <ThumbsDown size={16} /> Reject / Override
+                        {submittingDecision ? <Loader2 size={16} className="animate-spin" /> : <ThumbsDown size={16} />} Reject / Override
                       </button>
                     </div>
                   </>
@@ -304,13 +435,19 @@ const BlockModal = ({ block, onClose }: { block: Block, onClose: () => void }) =
                   <div className={`p-3 rounded-lg border ${overrideStatus === 'approved' ? 'bg-green-900/20 border-green-500/30 text-green-400' : 'bg-red-900/20 border-red-500/30 text-red-400'}`}>
                     <div className="flex items-center gap-2 font-semibold mb-1">
                       {overrideStatus === 'approved' ? <Check size={18} /> : <ThumbsDown size={18} />}
-                      {overrideStatus === 'approved' ? 'Block Approved' : 'Block Overridden'}
+                      {overrideStatus === 'approved' ? 'Block Approved & Synced to Backend' : 'Block Overridden & Synced to Backend'}
                     </div>
                     {overrideReason && (
                       <div className="text-xs text-gray-300 mt-2">
                         <span className="font-semibold text-gray-500">Reason Logged:</span> {overrideReason}
                       </div>
                     )}
+                    <button 
+                      onClick={() => setOverrideStatus('pending')}
+                      className="mt-3 text-xs text-gray-400 hover:text-white underline block"
+                    >
+                      Change Decision
+                    </button>
                   </div>
                 )}
               </div>
@@ -323,146 +460,228 @@ const BlockModal = ({ block, onClose }: { block: Block, onClose: () => void }) =
 };
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState<'cockpit' | 'lab'>('cockpit');
+  const [kpis, setKpis] = useState(mockKPIs);
+  const [blocks, setBlocks] = useState(mockBlocks);
+  const [alerts, setAlerts] = useState(mockAlerts);
+  const [trains, setTrains] = useState(mockTrains);
+  const [corridors, setCorridors] = useState(mockCorridors);
+  const [telemetry, setTelemetry] = useState<TelemetryEvent[]>([]);
+  const [telemetryLoading, setTelemetryLoading] = useState(true);
+  const [apiStatus, setApiStatus] = useState<'connecting' | 'live' | 'offline'>('connecting');
   const [selectedBlock, setSelectedBlock] = useState<Block | null>(null);
   const [role, setRole] = useState<'All' | 'Engineering' | 'Signal & Telecom' | 'Electrical' | 'COA'>('All');
   const [viewMode, setViewMode] = useState<'Optimized' | 'Siloed'>('Optimized');
 
+  // Fetch dashboard data whenever viewMode changes
+  useEffect(() => {
+    setApiStatus('connecting');
+    simulationService.getDashboard(viewMode.toLowerCase())
+      .then(data => {
+        setKpis(data.kpis);
+        setBlocks(data.blocks);
+        setAlerts(data.alerts);
+        setTrains(data.trains);
+        setCorridors(data.corridors);
+        setApiStatus('live');
+      })
+      .catch(() => {
+        setApiStatus('offline');
+      });
+  }, [viewMode]);
+
+  // Periodic polling for live operations telemetry
+  useEffect(() => {
+    let isMounted = true;
+    const fetchTelemetry = () => {
+      simulationService.getTelemetry()
+        .then(data => {
+          if (isMounted) {
+            setTelemetry(data);
+            setTelemetryLoading(false);
+          }
+        })
+        .catch(() => {
+          if (isMounted) {
+            setTelemetryLoading(false);
+          }
+        });
+    };
+
+    fetchTelemetry();
+    const interval = setInterval(fetchTelemetry, 6000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const handleBlockDecision = async (blockId: string, decision: 'approved' | 'rejected', reason?: string) => {
+    const res = await simulationService.submitBlockDecision(blockId, decision, reason, role);
+    
+    // Refresh the dashboard from the backend to update KPIs, resolved alerts, and updated block statuses
+    const updatedDashboard = await simulationService.getDashboard(viewMode.toLowerCase());
+    setKpis(updatedDashboard.kpis);
+    setBlocks(updatedDashboard.blocks);
+    setAlerts(updatedDashboard.alerts);
+    setTrains(updatedDashboard.trains);
+
+    if (selectedBlock && selectedBlock.block_id === blockId) {
+      setSelectedBlock(res.block);
+    }
+  };
+
   // Filter blocks based on role
-  let displayBlocks = mockBlocks.filter(b => 
+  const displayBlocks = blocks.filter(b =>
     role === 'All' || role === 'COA' || b.departments_involved.includes(role)
   );
-
-  // Simulate unoptimized siloed state where multi-department blocks are split up
-  if (viewMode === 'Siloed' && displayBlocks.length > 0) {
-    const siloed = [];
-    for (const b of displayBlocks) {
-      if (b.departments_involved.length > 1) {
-        siloed.push({
-          ...b,
-          block_id: b.block_id + '-ENG',
-          duration: 180,
-          scheduled_end: '04:30',
-          departments_involved: [b.departments_involved[0]]
-        });
-        siloed.push({
-          ...b,
-          block_id: b.block_id + '-SNT',
-          scheduled_start: '05:30',
-          scheduled_end: '07:30',
-          duration: 120,
-          departments_involved: [b.departments_involved[1]]
-        });
-      } else {
-        siloed.push(b);
-      }
-    }
-    displayBlocks = siloed;
-  }
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-300 font-sans flex flex-col">
       {/* Header */}
       <header className="bg-gray-900 border-b border-gray-800 h-16 flex items-center justify-between px-6 shrink-0 sticky top-0 z-40">
-        <div className="flex items-center gap-4">
-          <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-600/20">
-            RS
+        <div className="flex items-center gap-5">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-600/20">
+              RS
+            </div>
+            <h1 className="text-xl font-bold text-white tracking-tight flex items-center">
+              RailSync <span className="text-gray-500 font-normal mx-2">|</span> 
+              <span className="text-indigo-400 font-medium text-sm">AI Operations</span>
+            </h1>
           </div>
-          <h1 className="text-xl font-bold text-white tracking-tight flex items-center">
-            RailSync <span className="text-gray-500 font-normal mx-2">|</span> 
-            <span className="text-indigo-400 font-medium text-sm">Dispatcher Cockpit</span>
-          </h1>
+
+          {/* Navigation Tabs */}
+          <nav className="flex items-center bg-gray-800/90 p-1 rounded-lg border border-gray-700">
+            <button
+              onClick={() => setActiveTab('cockpit')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded transition flex items-center gap-1.5 ${
+                activeTab === 'cockpit'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              <Activity size={13} /> Corridor Cockpit
+            </button>
+            <button
+              onClick={() => setActiveTab('lab')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded transition flex items-center gap-1.5 ${
+                activeTab === 'lab'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              <Layers size={13} /> AI Ingestion & Normalization
+            </button>
+          </nav>
         </div>
         
-        <div className="flex items-center gap-6">
-          {/* View Mode Toggle */}
-          <div className="flex bg-gray-800 p-1 rounded-lg border border-gray-700">
-            <button 
-              onClick={() => setViewMode('Siloed')}
-              className={`px-3 py-1.5 text-xs font-medium rounded ${viewMode === 'Siloed' ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-gray-200'}`}
-            >
-              Manual/Siloed Plan
-            </button>
-            <button 
-              onClick={() => setViewMode('Optimized')}
-              className={`px-3 py-1.5 text-xs font-medium rounded flex items-center gap-1 ${viewMode === 'Optimized' ? 'bg-indigo-600 text-white shadow' : 'text-gray-400 hover:text-gray-200'}`}
-            >
-              <Zap size={12} /> AI Optimized
-            </button>
-          </div>
+        <div className="flex items-center gap-5">
+          {activeTab === 'cockpit' && (
+            <>
+              {/* View Mode Toggle */}
+              <div className="flex bg-gray-800 p-1 rounded-lg border border-gray-700">
+                <button 
+                  onClick={() => setViewMode('Siloed')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded transition ${viewMode === 'Siloed' ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-gray-200'}`}
+                >
+                  Manual/Siloed Plan
+                </button>
+                <button 
+                  onClick={() => setViewMode('Optimized')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded flex items-center gap-1 transition ${viewMode === 'Optimized' ? 'bg-indigo-600 text-white shadow' : 'text-gray-400 hover:text-gray-200'}`}
+                >
+                  <Zap size={12} /> AI Optimized
+                </button>
+              </div>
 
-          {/* Role Selector */}
+              {/* Role Selector */}
+              <div className="flex items-center gap-2">
+                <Filter size={14} className="text-gray-400" />
+                <select 
+                  value={role} 
+                  onChange={(e) => setRole(e.target.value as any)}
+                  className="bg-gray-800 border border-gray-700 text-sm text-gray-200 rounded px-2 py-1 outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  <option value="All">All Departments</option>
+                  <option value="Engineering">Engineering Planner</option>
+                  <option value="Signal & Telecom">S&T Planner</option>
+                  <option value="Electrical">TRD Planner</option>
+                  <option value="COA">COA Controller</option>
+                </select>
+              </div>
+
+              <div className="h-6 border-l border-gray-700"></div>
+            </>
+          )}
+
           <div className="flex items-center gap-2">
-            <Filter size={14} className="text-gray-400" />
-            <select 
-              value={role} 
-              onChange={(e) => setRole(e.target.value as any)}
-              className="bg-gray-800 border border-gray-700 text-sm text-gray-200 rounded px-2 py-1 outline-none focus:border-indigo-500"
-            >
-              <option value="All">All Departments</option>
-              <option value="Engineering">Engineering Planner</option>
-              <option value="Signal & Telecom">S&T Planner</option>
-              <option value="Electrical">TRD Planner</option>
-              <option value="COA">COA Controller</option>
-            </select>
-          </div>
-
-          <div className="h-6 border-l border-gray-700"></div>
-
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse"></div>
-            <span className="text-sm font-medium text-green-400 tracking-wider">LIVE</span>
+            <div className={`w-2 h-2 rounded-full shadow-[0_0_8px_rgba(34,197,94,0.6)] ${apiStatus === 'offline' ? 'bg-yellow-500' : 'bg-green-500 animate-pulse'}`}></div>
+            <span className={`text-sm font-medium tracking-wider ${apiStatus === 'offline' ? 'text-yellow-400' : 'text-green-400'}`}>
+              {apiStatus === 'connecting' ? 'CONNECTING' : apiStatus === 'live' ? 'LIVE' : 'OFFLINE / MOCK'}
+            </span>
           </div>
           
-          <button className="flex items-center gap-1.5 text-xs font-medium text-white bg-gray-800 hover:bg-gray-700 border border-gray-600 px-3 py-1.5 rounded transition">
-            <FileDown size={14} /> Export Plan
-          </button>
+          {activeTab === 'cockpit' && (
+            <button 
+              onClick={() => simulationService.downloadPlanExport()}
+              className="flex items-center gap-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 border border-indigo-400/30 px-3 py-1.5 rounded transition shadow-sm"
+              title="Download Master Tactical Maintenance & Corridor Schedule (CSV)"
+            >
+              <FileDown size={14} /> Export Plan
+            </button>
+          )}
         </div>
       </header>
 
-      {/* Main Dashboard */}
-      <main className="flex-1 p-6 flex flex-col overflow-y-auto">
-        {/* KPIs */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {mockKPIs.map(kpi => <KPICard key={kpi.id} kpi={kpi} />)}
-        </div>
-
-        {/* View mode warning banner */}
-        {viewMode === 'Siloed' && (
-          <div className="mt-6 bg-red-900/30 border border-red-500/50 text-red-200 p-3 rounded-lg flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <AlertTriangle size={18} className="text-red-400" />
-              <span className="text-sm font-medium">Viewing Manual/Siloed Plan. This represents the baseline unoptimized state with isolated department requests.</span>
-            </div>
-            <div className="text-xs font-bold px-2 py-1 bg-red-800 rounded">18.5 hrs excess block time required</div>
+      {/* Main View */}
+      {activeTab === 'cockpit' ? (
+        <main className="flex-1 p-6 flex flex-col overflow-y-auto">
+          {/* KPIs */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {kpis.map(kpi => <KPICard key={kpi.id} kpi={kpi} />)}
           </div>
-        )}
 
-        {/* Timeline */}
-        <Timeline blocks={displayBlocks} onBlockClick={setSelectedBlock} />
-
-        {/* Lower Panels */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6 min-h-[300px]">
-          <div className="lg:col-span-1">
-            <AlertsPanel alerts={mockAlerts} />
-          </div>
-          <div className="lg:col-span-1">
-            <TrainsPanel trains={mockTrains} />
-          </div>
-          <div className="lg:col-span-1">
-            <Card className="h-full">
-              <h3 className="text-lg font-semibold mb-4 text-white">Live Operations Stream</h3>
-              <div className="flex flex-col items-center justify-center h-48 text-gray-500 space-y-3">
-                <Activity size={32} className="opacity-50" />
-                <p className="text-sm">Connecting to F-06 Telemetry...</p>
-                <div className="px-3 py-1 bg-gray-800 rounded-full text-xs">Mock Telemetry Active</div>
+          {/* View mode warning banner */}
+          {viewMode === 'Siloed' && (
+            <div className="mt-6 bg-red-900/30 border border-red-500/50 text-red-200 p-3 rounded-lg flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={18} className="text-red-400" />
+                <span className="text-sm font-medium">Viewing Manual/Siloed Plan from AI Backend. Uncoordinated multi-department demands increase network downtime.</span>
               </div>
-            </Card>
+              <div className="text-xs font-bold px-2 py-1 bg-red-800 rounded">18.5 hrs excess block time required</div>
+            </div>
+          )}
+
+          {/* Master Timeline */}
+          <Timeline blocks={displayBlocks} corridors={corridors} onBlockClick={setSelectedBlock} />
+
+          {/* Lower Panels */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6 min-h-[340px]">
+            <div className="lg:col-span-1">
+              <AlertsPanel alerts={alerts} />
+            </div>
+            <div className="lg:col-span-1">
+              <TrainsPanel trains={trains} />
+            </div>
+            <div className="lg:col-span-1">
+              <TelemetryPanel telemetry={telemetry} loading={telemetryLoading} />
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
+      ) : (
+        <NormalizationLab />
+      )}
 
       {/* Block Details Modal */}
-      {selectedBlock && <BlockModal block={selectedBlock} onClose={() => setSelectedBlock(null)} />}
+      {selectedBlock && (
+        <BlockModal 
+          block={selectedBlock} 
+          onClose={() => setSelectedBlock(null)} 
+          onDecisionSubmit={handleBlockDecision}
+        />
+      )}
     </div>
   );
 }
+
